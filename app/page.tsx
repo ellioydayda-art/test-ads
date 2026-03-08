@@ -1,66 +1,46 @@
-import React, { useState, useEffect, useMemo } from 'react';
+'use client';
 
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-    TrendingUp,
-    ShoppingBag,
-    DollarSign,
-    Users,
-    LayoutDashboard,
-    LogOut,
-    ChevronDown,
-    ArrowUpRight,
-    ArrowDownRight,
-    Filter,
-    Calendar,
-    Layers,
-    Percent,
-    Sparkles,
-    Zap,
-    AlertCircle,
-    Lightbulb,
-    Key,
-    Database,
-    RefreshCw,
-    Cpu
+    TrendingUp, ShoppingBag, DollarSign, Users, LayoutDashboard,
+    LogOut, ChevronDown, ArrowUpRight, ArrowDownRight, Filter,
+    Calendar, Layers, Percent, Sparkles, Zap, AlertCircle,
+    Lightbulb, Key, Database, RefreshCw, Cpu,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import {
-    AreaChart,
-    Area,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-    PieChart,
-    Pie,
-    Cell,
-    BarChart,
-    Bar,
-    Legend
+    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+    ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, Legend,
 } from 'recharts';
 import { parseISO, isWithinInterval, format } from 'date-fns';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI } from '@google/genai';
 
-function cn(...inputs) {
+function cn(...inputs: Parameters<typeof clsx>) {
     return twMerge(clsx(inputs));
 }
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'];
 
-const StatCard = ({ title, value, icon: Icon, trend, trendValue, color }) => (
+const StatCard = ({
+    title, value, icon: Icon, trend, trendValue, color,
+}: {
+    title: string; value: string; icon: React.ElementType;
+    trend?: 'up' | 'down'; trendValue?: string; color: string;
+}) => (
     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
         <div className="flex items-center justify-between mb-4">
-            <div className={cn("p-2 rounded-xl", color)}>
+            <div className={cn('p-2 rounded-xl', color)}>
                 <Icon className="w-5 h-5" />
             </div>
             {trend && (
                 <span className={cn(
-                    "flex items-center text-xs font-medium px-2 py-1 rounded-full",
-                    trend === 'up' ? "text-emerald-600 bg-emerald-50" : "text-rose-600 bg-rose-50"
+                    'flex items-center text-xs font-medium px-2 py-1 rounded-full',
+                    trend === 'up' ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50',
                 )}>
-                    {trend === 'up' ? <ArrowUpRight className="w-3 h-3 mr-1" /> : <ArrowDownRight className="w-3 h-3 mr-1" />}
+                    {trend === 'up'
+                        ? <ArrowUpRight className="w-3 h-3 mr-1" />
+                        : <ArrowDownRight className="w-3 h-3 mr-1" />}
                     {trendValue}
                 </span>
             )}
@@ -70,9 +50,14 @@ const StatCard = ({ title, value, icon: Icon, trend, trendValue, color }) => (
     </div>
 );
 
-const InsightCard = ({ label, value, description, icon: Icon, color }) => (
+const InsightCard = ({
+    label, value, description, icon: Icon, color,
+}: {
+    label: string; value?: string; description: string;
+    icon: React.ElementType; color: string;
+}) => (
     <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex items-start gap-4">
-        <div className={cn("p-2.5 rounded-lg shrink-0", color)}>
+        <div className={cn('p-2.5 rounded-lg shrink-0', color)}>
             <Icon className="w-5 h-5" />
         </div>
         <div className="min-w-0">
@@ -83,24 +68,41 @@ const InsightCard = ({ label, value, description, icon: Icon, color }) => (
     </div>
 );
 
-const App = () => {
-    const [data, setData] = useState([]);
+type SalesRow = {
+    date: string; product: string; channel: string;
+    orders: number; revenue: number; cost: number;
+    visitors: number; customers: number;
+};
+
+type AiInsights = {
+    alerts: string[]; opportunities: string[]; suggestions: string[];
+};
+
+export default function Dashboard() {
+    const [data, setData] = useState<SalesRow[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Filters State
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [selectedProduct, setSelectedProduct] = useState('All');
     const [selectedChannel, setSelectedChannel] = useState('All');
 
-    // AI State
-    const [apiKey, setApiKey] = useState(import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('gemini_api_key') || '');
+    const [apiKey, setApiKey] = useState('');
     const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
-    const [aiInsights, setAiInsights] = useState(null);
+    const [aiInsights, setAiInsights] = useState<AiInsights | null>(null);
     const [generating, setGenerating] = useState(false);
 
+    // Load API key from env or localStorage (client-only)
     useEffect(() => {
-        localStorage.setItem('gemini_api_key', apiKey);
+        const envKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+        const stored = typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') || '' : '';
+        setApiKey(envKey || stored);
+    }, []);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('gemini_api_key', apiKey);
+        }
     }, [apiKey]);
 
     useEffect(() => {
@@ -108,11 +110,11 @@ const App = () => {
             try {
                 const response = await fetch('/api/sales');
                 if (!response.ok) throw new Error(`API error: ${response.status}`);
-                const cleanData = await response.json();
+                const cleanData: SalesRow[] = await response.json();
 
                 setData(cleanData);
                 if (cleanData.length > 0) {
-                    const dates = cleanData.map(d => d.date).sort();
+                    const dates = cleanData.map((d) => d.date).sort();
                     setStartDate(dates[0]);
                     setEndDate(dates[dates.length - 1]);
                 }
@@ -122,114 +124,96 @@ const App = () => {
                 setLoading(false);
             }
         };
-
         fetchData();
     }, []);
 
+    const productOptions = useMemo(() => ['All', ...new Set(data.map((d) => d.product))], [data]);
+    const channelOptions = useMemo(() => ['All', ...new Set(data.map((d) => d.channel))], [data]);
 
-    const productOptions = useMemo(() => ['All', ...new Set(data.map(d => d.product))], [data]);
-    const channelOptions = useMemo(() => ['All', ...new Set(data.map(d => d.channel))], [data]);
-
-    const filteredData = useMemo(() => {
-        return data.filter(row => {
-            const dateMatch = (!startDate || !endDate) || isWithinInterval(parseISO(row.date), {
-                start: parseISO(startDate),
-                end: parseISO(endDate)
-            });
-            const productMatch = selectedProduct === 'All' || row.product === selectedProduct;
-            const channelMatch = selectedChannel === 'All' || row.channel === selectedChannel;
-            return dateMatch && productMatch && channelMatch;
+    const filteredData = useMemo(() => data.filter((row) => {
+        const dateMatch = (!startDate || !endDate) || isWithinInterval(parseISO(row.date), {
+            start: parseISO(startDate), end: parseISO(endDate),
         });
-    }, [data, startDate, endDate, selectedProduct, selectedChannel]);
+        const productMatch = selectedProduct === 'All' || row.product === selectedProduct;
+        const channelMatch = selectedChannel === 'All' || row.channel === selectedChannel;
+        return dateMatch && productMatch && channelMatch;
+    }), [data, startDate, endDate, selectedProduct, selectedChannel]);
 
     const summaryMetrics = useMemo(() => {
         const totalRev = filteredData.reduce((acc, curr) => acc + (curr.revenue || 0), 0);
         const totalOrders = filteredData.reduce((acc, curr) => acc + (curr.orders || 0), 0);
         const totalCost = filteredData.reduce((acc, curr) => acc + (curr.cost || 0), 0);
-        const totalProfit = totalRev - totalCost;
-        const aov = totalOrders > 0 ? totalRev / totalOrders : 0;
-
-        return { totalRev, totalOrders, totalProfit, aov };
+        return { totalRev, totalOrders, totalProfit: totalRev - totalCost, aov: totalOrders > 0 ? totalRev / totalOrders : 0 };
     }, [filteredData]);
 
     const stats = useMemo(() => {
-        const { totalRev, totalOrders, totalProfit, aov } = summaryMetrics;
+        const fmt = (v: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
         return {
-            totalRevenue: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalRev),
-            totalOrders: totalOrders.toLocaleString(),
-            totalProfit: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(totalProfit),
-            aov: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(aov),
+            totalRevenue: fmt(summaryMetrics.totalRev),
+            totalOrders: summaryMetrics.totalOrders.toLocaleString(),
+            totalProfit: fmt(summaryMetrics.totalProfit),
+            aov: fmt(summaryMetrics.aov),
         };
     }, [summaryMetrics]);
 
-    // Data Insights
     const dataInsights = useMemo(() => {
         if (filteredData.length === 0) return null;
 
-        // Best Product
-        const productRev = filteredData.reduce((acc, curr) => {
+        const productRev = filteredData.reduce<Record<string, number>>((acc, curr) => {
             acc[curr.product] = (acc[curr.product] || 0) + (curr.revenue || 0);
             return acc;
         }, {});
         const bestProduct = Object.entries(productRev).sort((a, b) => b[1] - a[1])[0]?.[0];
 
-        // Best Channel (by orders)
-        const channelOrders = filteredData.reduce((acc, curr) => {
+        const channelOrders = filteredData.reduce<Record<string, number>>((acc, curr) => {
             acc[curr.channel] = (acc[curr.channel] || 0) + (curr.orders || 0);
             return acc;
         }, {});
         const bestChannel = Object.entries(channelOrders).sort((a, b) => b[1] - a[1])[0]?.[0];
 
-        // Highest Revenue Day
-        const dailyRev = filteredData.reduce((acc, curr) => {
+        const dailyRev = filteredData.reduce<Record<string, number>>((acc, curr) => {
             acc[curr.date] = (acc[curr.date] || 0) + (curr.revenue || 0);
             return acc;
         }, {});
         const peakDayEntry = Object.entries(dailyRev).sort((a, b) => b[1] - a[1])[0];
         const peakDay = peakDayEntry ? format(parseISO(peakDayEntry[0]), 'MMM dd, yyyy') : 'N/A';
 
-        // Best Conversion Channel
-        const channelConv = filteredData.reduce((acc, curr) => {
+        const channelConv = filteredData.reduce<Record<string, { cust: number; visit: number }>>((acc, curr) => {
             if (!acc[curr.channel]) acc[curr.channel] = { cust: 0, visit: 0 };
-            acc[curr.channel].cust += (curr.customers || 0);
-            acc[curr.channel].visit += (curr.visitors || 0);
+            acc[curr.channel].cust += curr.customers || 0;
+            acc[curr.channel].visit += curr.visitors || 0;
             return acc;
         }, {});
         const bestConv = Object.entries(channelConv)
-            .map(([name, vals]) => [name, vals.visit > 0 ? vals.cust / vals.visit : 0])
+            .map(([name, vals]) => [name, vals.visit > 0 ? vals.cust / vals.visit : 0] as [string, number])
             .sort((a, b) => b[1] - a[1])[0]?.[0];
 
         return { bestProduct, bestChannel, peakDay, bestConv };
     }, [filteredData]);
 
     const chartData = useMemo(() => {
-        // 1. Revenue trend by date
-        const dateGroups = filteredData.reduce((acc, curr) => {
+        const dateGroups = filteredData.reduce<Record<string, number>>((acc, curr) => {
             acc[curr.date] = (acc[curr.date] || 0) + (curr.revenue || 0);
             return acc;
         }, {});
-        const revenueTrend = Object.keys(dateGroups).sort().map(date => ({
-            date: format(parseISO(date), 'MMM dd'),
-            revenue: dateGroups[date]
+        const revenueTrend = Object.keys(dateGroups).sort().map((date) => ({
+            date: format(parseISO(date), 'MMM dd'), revenue: dateGroups[date],
         }));
 
-        // 2. Revenue by channel
-        const channelGroups = filteredData.reduce((acc, curr) => {
+        const channelGroups = filteredData.reduce<Record<string, number>>((acc, curr) => {
             acc[curr.channel] = (acc[curr.channel] || 0) + (curr.revenue || 0);
             return acc;
         }, {});
-        const revenueByChannel = Object.keys(channelGroups).map(channel => ({
-            name: channel,
-            value: channelGroups[channel]
+        const revenueByChannel = Object.keys(channelGroups).map((channel) => ({
+            name: channel, value: channelGroups[channel],
         }));
 
-        // 3. Top products by revenue
-        const productGroups = filteredData.reduce((acc, curr) => {
+        const productGroups = filteredData.reduce<Record<string, number>>((acc, curr) => {
             acc[curr.product] = (acc[curr.product] || 0) + (curr.revenue || 0);
             return acc;
         }, {});
         const topProducts = Object.keys(productGroups)
-            .map(product => ({ name: product, revenue: productGroups[product] }))
+            .map((product) => ({ name: product, revenue: productGroups[product] }))
             .sort((a, b) => b.revenue - a.revenue)
             .slice(0, 5);
 
@@ -244,16 +228,15 @@ const App = () => {
         setGenerating(true);
         try {
             const client = new GoogleGenAI({ apiKey: apiKey.trim() });
-
             const prompt = `
         Analyze this sales data summary for a business:
         - Total Revenue: ${stats.totalRevenue}
         - Total Orders: ${stats.totalOrders}
         - Total Profit: ${stats.totalProfit}
         - Avg. Order Value: ${stats.aov}
-        - Top Product: ${dataInsights.bestProduct}
-        - Best Channel: ${dataInsights.bestChannel}
-        - Channel with Highest Conversion: ${dataInsights.bestConv}
+        - Top Product: ${dataInsights?.bestProduct}
+        - Best Channel: ${dataInsights?.bestChannel}
+        - Channel with Highest Conversion: ${dataInsights?.bestConv}
         - Filters: Product=${selectedProduct}, Channel=${selectedChannel}
 
         Please provide exactly 3 bullet points under each of these categories:
@@ -262,32 +245,23 @@ const App = () => {
         3. Suggestions (Actionable steps)
 
         Keep each bullet point short, simple, and in clear business language.
-        Format as JSON like this: {"alerts": ["...", "..."], "opportunities": ["...", "..."], "suggestions": ["...", "..."]}
+        Format as JSON: {"alerts": ["...", "..."], "opportunities": ["...", "..."], "suggestions": ["...", "..."]}
       `;
 
             const result = await client.models.generateContent({
                 model: selectedModel,
-                contents: [{ role: 'user', parts: [{ text: prompt }] }]
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
             });
 
-            const outputText = result.text || (result.response && result.response.text());
-
-            console.log("AI Response:", outputText);
-
-            // Basic JSON extraction in case model adds markdown
+            const outputText = result.text || '';
             const jsonStart = outputText.indexOf('{');
             const jsonEnd = outputText.lastIndexOf('}') + 1;
-
-            if (jsonStart === -1 || jsonEnd === 0) {
-                throw new Error("Invalid response format from AI. Please try again.");
-            }
-
-            const jsonStr = outputText.substring(jsonStart, jsonEnd);
-            setAiInsights(JSON.parse(jsonStr));
+            if (jsonStart === -1 || jsonEnd === 0) throw new Error('Invalid response format from AI.');
+            setAiInsights(JSON.parse(outputText.substring(jsonStart, jsonEnd)));
         } catch (error) {
-            console.error('Gemini AI Detailed Error:', error);
-            const errorMessage = error.message || 'Unknown error';
-            alert(`Failed to generate insights: ${errorMessage}\n\nPlease check your API key, model selection, and internet connection.`);
+            console.error('Gemini Error:', error);
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            alert(`Failed to generate insights: ${msg}\n\nPlease check your API key and try again.`);
         } finally {
             setGenerating(false);
         }
@@ -296,7 +270,7 @@ const App = () => {
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-background">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
         );
     }
@@ -315,20 +289,16 @@ const App = () => {
 
                     <nav className="space-y-1">
                         <a href="#" className="flex items-center gap-3 px-3 py-2 bg-slate-50 text-primary rounded-lg font-medium">
-                            <LayoutDashboard className="w-5 h-5" />
-                            Overview
+                            <LayoutDashboard className="w-5 h-5" />Overview
                         </a>
                         <a href="#" className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
-                            <ShoppingBag className="w-5 h-5" />
-                            Sales Analysis
+                            <ShoppingBag className="w-5 h-5" />Sales Analysis
                         </a>
                         <a href="#" className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
-                            <Cpu className="w-5 h-5" />
-                            AI Advisor
+                            <Cpu className="w-5 h-5" />AI Advisor
                         </a>
                         <a href="#" className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
-                            <Users className="w-5 h-5" />
-                            Customers
+                            <Users className="w-5 h-5" />Customers
                         </a>
                     </nav>
                 </div>
@@ -370,8 +340,7 @@ const App = () => {
                         </div>
                     </div>
                     <button className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:text-rose-600 transition-colors w-full">
-                        <LogOut className="w-5 h-5" />
-                        Sign Out
+                        <LogOut className="w-5 h-5" />Sign Out
                     </button>
                 </div>
             </aside>
@@ -399,91 +368,50 @@ const App = () => {
                             <h2 className="text-3xl font-bold text-slate-900 leading-tight">Dashboard Overview</h2>
                             <p className="text-slate-500 mt-1">Real-time business insights and performance tracking.</p>
                         </div>
-
                         <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4">
-                            <div className="flex items-center gap-2 px-3 py-1.5 border-r border-slate-100 last:border-0">
+                            <div className="flex items-center gap-2 px-3 py-1.5 border-r border-slate-100">
                                 <Calendar className="w-4 h-4 text-slate-400" />
-                                <input
-                                    type="date"
-                                    value={startDate}
-                                    onChange={(e) => setStartDate(e.target.value)}
-                                    className="text-sm font-semibold focus:outline-none bg-transparent hover:text-primary transition-colors cursor-pointer"
-                                />
+                                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                                    className="text-sm font-semibold focus:outline-none bg-transparent hover:text-primary cursor-pointer" />
                                 <span className="text-slate-300">to</span>
-                                <input
-                                    type="date"
-                                    value={endDate}
-                                    onChange={(e) => setEndDate(e.target.value)}
-                                    className="text-sm font-semibold focus:outline-none bg-transparent hover:text-primary transition-colors cursor-pointer"
-                                />
+                                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                                    className="text-sm font-semibold focus:outline-none bg-transparent hover:text-primary cursor-pointer" />
                             </div>
-
-                            <div className="flex items-center gap-2 px-3 py-1.5 border-r border-slate-100 last:border-0">
+                            <div className="flex items-center gap-2 px-3 py-1.5 border-r border-slate-100">
                                 <Layers className="w-4 h-4 text-slate-400" />
-                                <select
-                                    value={selectedProduct}
-                                    onChange={(e) => setSelectedProduct(e.target.value)}
-                                    className="text-sm font-semibold focus:outline-none bg-transparent cursor-pointer hover:text-primary"
-                                >
-                                    {productOptions.map(opt => <option key={opt} value={opt}>{opt === 'All' ? 'All Products' : opt}</option>)}
+                                <select value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)}
+                                    className="text-sm font-semibold focus:outline-none bg-transparent cursor-pointer hover:text-primary">
+                                    {productOptions.map((opt) => <option key={opt} value={opt}>{opt === 'All' ? 'All Products' : opt}</option>)}
                                 </select>
                             </div>
-
-                            <div className="flex items-center gap-2 px-3 py-1.5 last:border-0">
+                            <div className="flex items-center gap-2 px-3 py-1.5">
                                 <Filter className="w-4 h-4 text-slate-400" />
-                                <select
-                                    value={selectedChannel}
-                                    onChange={(e) => setSelectedChannel(e.target.value)}
-                                    className="text-sm font-semibold focus:outline-none bg-transparent cursor-pointer hover:text-primary"
-                                >
-                                    {channelOptions.map(opt => <option key={opt} value={opt}>{opt === 'All' ? 'All Channels' : opt}</option>)}
+                                <select value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value)}
+                                    className="text-sm font-semibold focus:outline-none bg-transparent cursor-pointer hover:text-primary">
+                                    {channelOptions.map((opt) => <option key={opt} value={opt}>{opt === 'All' ? 'All Channels' : opt}</option>)}
                                 </select>
                             </div>
                         </div>
                     </div>
 
-                    {/* Simple Metrics Row */}
+                    {/* KPI Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <StatCard title="Revenue" value={stats?.totalRevenue} icon={DollarSign} trend="up" trendValue="12.5%" color="text-blue-600 bg-blue-50" />
-                        <StatCard title="Orders" value={stats?.totalOrders} icon={ShoppingBag} trend="up" trendValue="8.2%" color="text-purple-600 bg-purple-50" />
-                        <StatCard title="Net Profit" value={stats?.totalProfit} icon={TrendingUp} trend="up" trendValue="4.1%" color="text-emerald-600 bg-emerald-50" />
-                        <StatCard title="AOV" value={stats?.aov} icon={Users} trend="down" trendValue="1.2%" color="text-orange-600 bg-orange-50" />
+                        <StatCard title="Revenue" value={stats.totalRevenue} icon={DollarSign} trend="up" trendValue="12.5%" color="text-blue-600 bg-blue-50" />
+                        <StatCard title="Orders" value={stats.totalOrders} icon={ShoppingBag} trend="up" trendValue="8.2%" color="text-purple-600 bg-purple-50" />
+                        <StatCard title="Net Profit" value={stats.totalProfit} icon={TrendingUp} trend="up" trendValue="4.1%" color="text-emerald-600 bg-emerald-50" />
+                        <StatCard title="AOV" value={stats.aov} icon={Users} trend="down" trendValue="1.2%" color="text-orange-600 bg-orange-50" />
                     </div>
 
-                    {/* Quick Data Insights */}
+                    {/* Quick Insights */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <InsightCard
-                            label="Best Product"
-                            value={dataInsights?.bestProduct}
-                            description="Highest revenue contributor"
-                            icon={Sparkles}
-                            color="text-amber-600 bg-amber-50"
-                        />
-                        <InsightCard
-                            label="Star Channel"
-                            value={dataInsights?.bestChannel}
-                            description="Highest order volume"
-                            icon={Zap}
-                            color="text-indigo-600 bg-indigo-50"
-                        />
-                        <InsightCard
-                            label="Peak Revenue Day"
-                            value={dataInsights?.peakDay}
-                            description="Single day performance high"
-                            icon={Calendar}
-                            color="text-rose-600 bg-rose-50"
-                        />
-                        <InsightCard
-                            label="Conversion King"
-                            value={dataInsights?.bestConv}
-                            description="Highest customer/visitor ratio"
-                            icon={TrendingUp}
-                            color="text-cyan-600 bg-cyan-50"
-                        />
+                        <InsightCard label="Best Product" value={dataInsights?.bestProduct} description="Highest revenue contributor" icon={Sparkles} color="text-amber-600 bg-amber-50" />
+                        <InsightCard label="Star Channel" value={dataInsights?.bestChannel} description="Highest order volume" icon={Zap} color="text-indigo-600 bg-indigo-50" />
+                        <InsightCard label="Peak Revenue Day" value={dataInsights?.peakDay} description="Single day performance high" icon={Calendar} color="text-rose-600 bg-rose-50" />
+                        <InsightCard label="Conversion King" value={dataInsights?.bestConv} description="Highest customer/visitor ratio" icon={TrendingUp} color="text-cyan-600 bg-cyan-50" />
                     </div>
 
                     {/* AI Insights Panel */}
-                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden border-l-[6px] border-l-primary leading-relaxed">
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden border-l-[6px] border-l-primary">
                         <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div>
                                 <div className="flex items-center gap-2 mb-1">
@@ -496,8 +424,8 @@ const App = () => {
                                 onClick={generateAIInsights}
                                 disabled={generating}
                                 className={cn(
-                                    "px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-sm",
-                                    generating ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-primary text-white hover:bg-blue-600 active:scale-95"
+                                    'px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-sm',
+                                    generating ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-primary text-white hover:bg-blue-600 active:scale-95',
                                 )}
                             >
                                 {generating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -510,62 +438,48 @@ const App = () => {
                                 <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <Sparkles className="text-slate-300 w-8 h-8" />
                                 </div>
-                                <h4 className="text-slate-800 font-bold mb-1 border-none bg-transparent">Ready to Analyze</h4>
-                                <p className="text-slate-500 text-sm max-w-sm mx-auto">Enter your API key and click the button above to get AI-powered strategy recommendations based on your current filters.</p>
+                                <h4 className="text-slate-800 font-bold mb-1">Ready to Analyze</h4>
+                                <p className="text-slate-500 text-sm max-w-sm mx-auto">Enter your API key and click the button above to get AI-powered strategy recommendations.</p>
                             </div>
                         )}
 
                         {generating && (
                             <div className="p-12 space-y-4">
-                                <div className="h-4 bg-slate-100 rounded-full w-3/4 animate-pulse mx-auto"></div>
-                                <div className="h-4 bg-slate-100 rounded-full w-1/2 animate-pulse mx-auto"></div>
-                                <div className="h-4 bg-slate-100 rounded-full w-2/3 animate-pulse mx-auto"></div>
+                                {[...Array(3)].map((_, i) => (
+                                    <div key={i} className={`h-4 bg-slate-100 rounded-full animate-pulse mx-auto ${i === 0 ? 'w-3/4' : i === 1 ? 'w-1/2' : 'w-2/3'}`} />
+                                ))}
                             </div>
                         )}
 
                         {aiInsights && (
                             <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8">
-                                {/* Alerts */}
                                 <div className="space-y-4">
                                     <div className="flex items-center gap-2 text-rose-600 font-bold uppercase text-xs tracking-widest bg-rose-50 w-fit px-2.5 py-1 rounded-lg">
-                                        <AlertCircle className="w-3 h-3" />
-                                        Alerts
+                                        <AlertCircle className="w-3 h-3" />Alerts
                                     </div>
                                     <ul className="space-y-3">
                                         {aiInsights.alerts.map((item, i) => (
-                                            <li key={i} className="text-sm text-slate-700 bg-rose-50/30 p-3 rounded-xl border border-rose-100/50 leading-snug">
-                                                {item}
-                                            </li>
+                                            <li key={i} className="text-sm text-slate-700 bg-rose-50/30 p-3 rounded-xl border border-rose-100/50 leading-snug">{item}</li>
                                         ))}
                                     </ul>
                                 </div>
-
-                                {/* Opportunities */}
                                 <div className="space-y-4">
                                     <div className="flex items-center gap-2 text-primary font-bold uppercase text-xs tracking-widest bg-blue-50 w-fit px-2.5 py-1 rounded-lg">
-                                        <Zap className="w-3 h-3" />
-                                        Opportunities
+                                        <Zap className="w-3 h-3" />Opportunities
                                     </div>
                                     <ul className="space-y-3">
                                         {aiInsights.opportunities.map((item, i) => (
-                                            <li key={i} className="text-sm text-slate-700 bg-blue-50/30 p-3 rounded-xl border border-blue-100/50 leading-snug">
-                                                {item}
-                                            </li>
+                                            <li key={i} className="text-sm text-slate-700 bg-blue-50/30 p-3 rounded-xl border border-blue-100/50 leading-snug">{item}</li>
                                         ))}
                                     </ul>
                                 </div>
-
-                                {/* Suggestions */}
                                 <div className="space-y-4">
                                     <div className="flex items-center gap-2 text-emerald-600 font-bold uppercase text-xs tracking-widest bg-emerald-50 w-fit px-2.5 py-1 rounded-lg">
-                                        <Lightbulb className="w-3 h-3" />
-                                        Suggestions
+                                        <Lightbulb className="w-3 h-3" />Suggestions
                                     </div>
                                     <ul className="space-y-3">
                                         {aiInsights.suggestions.map((item, i) => (
-                                            <li key={i} className="text-sm text-slate-700 bg-emerald-50/30 p-3 rounded-xl border border-emerald-100/50 leading-snug">
-                                                {item}
-                                            </li>
+                                            <li key={i} className="text-sm text-slate-700 bg-emerald-50/30 p-3 rounded-xl border border-emerald-100/50 leading-snug">{item}</li>
                                         ))}
                                     </ul>
                                 </div>
@@ -575,7 +489,7 @@ const App = () => {
 
                     {/* Charts Row */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm leading-relaxed">
+                        <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                             <h3 className="text-lg font-bold text-slate-800 mb-6">Revenue Trend</h3>
                             <div className="h-[300px] w-full">
                                 <ResponsiveContainer width="100%" height="100%">
@@ -589,20 +503,22 @@ const App = () => {
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                         <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
                                         <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} tickFormatter={(v) => `$${v}`} />
-                                        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} formatter={(v) => [`$${v.toLocaleString()}`, 'Revenue']} />
+                                        <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} formatter={(v) => [`$${Number(v).toLocaleString()}`, 'Revenue']} />
                                         <Area type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorRev)" />
                                     </AreaChart>
                                 </ResponsiveContainer>
                             </div>
                         </div>
 
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm leading-relaxed">
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                             <h3 className="text-lg font-bold text-slate-800 mb-6">By Channel</h3>
                             <div className="h-[300px] w-full">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
                                         <Pie data={chartData.revenueByChannel} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                                            {chartData.revenueByChannel.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                                            {chartData.revenueByChannel.map((_, index) => (
+                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                            ))}
                                         </Pie>
                                         <Tooltip />
                                         <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
@@ -613,7 +529,7 @@ const App = () => {
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-12">
-                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm leading-relaxed">
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                             <h3 className="text-lg font-bold text-slate-800 mb-6">Top Products</h3>
                             <div className="h-[432px] w-full">
                                 <ResponsiveContainer width="100%" height="100%">
@@ -621,7 +537,7 @@ const App = () => {
                                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                                         <XAxis type="number" hide />
                                         <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }} width={100} />
-                                        <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} formatter={(v) => [`$${v.toLocaleString()}`, 'Revenue']} />
+                                        <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} formatter={(v) => [`$${Number(v).toLocaleString()}`, 'Revenue']} />
                                         <Bar dataKey="revenue" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={24} />
                                     </BarChart>
                                 </ResponsiveContainer>
@@ -630,7 +546,7 @@ const App = () => {
 
                         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                                <h3 className="text-lg font-bold text-slate-800 leading-relaxed">Transaction History</h3>
+                                <h3 className="text-lg font-bold text-slate-800">Transaction History</h3>
                                 <span className="text-sm font-medium text-slate-400">{filteredData.length} total records</span>
                             </div>
                             <div className="overflow-x-auto flex-1">
@@ -648,9 +564,9 @@ const App = () => {
                                         {filteredData.slice(0, 10).map((row, idx) => (
                                             <tr key={idx} className="hover:bg-slate-50 transition-colors">
                                                 <td className="px-6 py-4 text-sm text-slate-600 font-medium whitespace-nowrap">{row.date}</td>
-                                                <td className="px-6 py-4 text-sm font-bold text-slate-900 leading-tight">{row.product}</td>
+                                                <td className="px-6 py-4 text-sm font-bold text-slate-900">{row.product}</td>
                                                 <td className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-slate-500">{row.channel}</td>
-                                                <td className="px-6 py-4 text-sm font-bold text-slate-900 text-right leading-tight">${(row.revenue || 0).toLocaleString()}</td>
+                                                <td className="px-6 py-4 text-sm font-bold text-slate-900 text-right">${(row.revenue || 0).toLocaleString()}</td>
                                                 <td className="px-6 py-4 text-right">
                                                     <span className="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700">COMPLETED</span>
                                                 </td>
@@ -665,6 +581,4 @@ const App = () => {
             </main>
         </div>
     );
-};
-
-export default App;
+}
